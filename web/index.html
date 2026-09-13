@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>云枢后台 · 登录</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <main class="shell">
+    <!-- 登录视图 -->
+    <section id="view-login" class="card" aria-labelledby="login-title">
+      <h1 id="login-title" class="brand">云枢后台</h1>
+      <p class="subtitle">登录以继续使用</p>
+      <p id="login-notice" class="notice" hidden></p>
+      <form id="login-form" novalidate>
+        <label class="field">
+          <span class="field-label">用户名</span>
+          <input id="login-username" name="username" type="text" autocomplete="username" required minlength="3" maxlength="32" />
+        </label>
+        <label class="field">
+          <span class="field-label">密码</span>
+          <span class="password-wrap">
+            <input id="login-password" name="password" type="password" autocomplete="current-password" required minlength="8" maxlength="128" />
+            <button type="button" class="toggle-visibility" data-target="login-password" aria-label="显示或隐藏密码">显示</button>
+          </span>
+        </label>
+        <p id="login-error" class="error" role="alert" hidden></p>
+        <button type="submit" class="primary">登录</button>
+      </form>
+      <p class="switch">还没有账号？<button type="button" class="link" id="goto-register">立即注册</button></p>
+    </section>
+
+    <!-- 注册视图 -->
+    <section id="view-register" class="card" aria-labelledby="register-title" hidden>
+      <h1 id="register-title" class="brand">创建账号</h1>
+      <p class="subtitle">注册成功后请手动登录</p>
+      <form id="register-form" novalidate>
+        <label class="field">
+          <span class="field-label">用户名</span>
+          <input id="register-username" name="username" type="text" autocomplete="username" required minlength="3" maxlength="32" />
+          <span class="hint" id="register-username-hint" hidden></span>
+        </label>
+        <label class="field">
+          <span class="field-label">密码</span>
+          <span class="password-wrap">
+            <input id="register-password" name="password" type="password" autocomplete="new-password" required minlength="8" maxlength="128" />
+            <button type="button" class="toggle-visibility" data-target="register-password" aria-label="显示或隐藏密码">显示</button>
+          </span>
+          <span class="hint" id="register-password-hint" hidden></span>
+        </label>
+        <p id="register-error" class="error" role="alert" hidden></p>
+        <button type="submit" class="primary">注册</button>
+      </form>
+      <p class="switch">已有账号？<button type="button" class="link" id="goto-login">返回登录</button></p>
+    </section>
+
+    <!-- 欢迎视图（受保护） -->
+    <section id="view-welcome" class="card" aria-labelledby="welcome-title" hidden>
+      <h1 id="welcome-title" class="brand">欢迎</h1>
+      <p class="welcome-line">当前用户：<strong id="welcome-username"></strong></p>
+      <p class="subtitle">这里是受保护的欢迎区域，仅登录后可见。</p>
+      <p class="hint" id="welcome-expires" hidden></p>
+      <button type="button" class="primary" id="logout-button">退出登录</button>
+    </section>
+  </main>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
