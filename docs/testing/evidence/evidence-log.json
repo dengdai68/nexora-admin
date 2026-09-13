@@ -1,0 +1,74 @@
+{
+  "requirement": "NEXORA-RBAC-011",
+  "browser": "Chrome/152.0.7977.83",
+  "commitSha": "0e7915bcb0de1581751219651793079a1d49ee77",
+  "serverBaseUrl": "http://127.0.0.1:56403",
+  "dbIsolated": "/var/folders/0v/30ygv3yd2fs9212mqrvq37t40000gn/T/nexora-e2e-PfpK2Q/e2e.db",
+  "steps": [
+    {
+      "step": "准备：注册 web_admin/web_user + 真实 CLI 引导（退出码 0）",
+      "ok": true,
+      "detail": "已将账号 web_admin 授予超级管理员（super_admin），审计已记录"
+    },
+    {
+      "step": "启动真实浏览器",
+      "ok": true,
+      "detail": "Chrome/152.0.7977.83"
+    },
+    {
+      "step": "S1 未登录打开应用 → 登录视图",
+      "ok": true
+    },
+    {
+      "step": "S2 web_admin 登录 → 欢迎视图含「进入后台管理」",
+      "ok": true
+    },
+    {
+      "step": "S3 后台导航四入口（用户管理/角色管理/权限目录/授权审计）",
+      "ok": true,
+      "detail": "用户管理|角色管理|权限目录|授权审计"
+    },
+    {
+      "step": "S4 浏览器新建角色 web_ops 成功并进入详情",
+      "ok": true
+    },
+    {
+      "step": "S5 权限树父子联动/半选态/已选计数（已选 4 项权限）",
+      "ok": true,
+      "detail": "用户管理组全选 + 角色管理组半选"
+    },
+    {
+      "step": "S6 保存后重建回显与数据库一致（4 项勾选，服务端核对通过）",
+      "ok": true,
+      "detail": "role:read,user:assign_roles,user:read,user:status"
+    },
+    {
+      "step": "S7 浏览器给 web_user 绑定角色 web_ops 并保存回显（服务端核对通过）",
+      "ok": true,
+      "detail": "web_ops"
+    },
+    {
+      "step": "S8 web_user 登录后仅见获准入口（用户管理/角色管理）",
+      "ok": true,
+      "detail": "用户管理|角色管理"
+    },
+    {
+      "step": "S9 撤权后 web_user 页面呈无权限态且底层 API 实测 403",
+      "ok": true,
+      "detail": "无权限：您没有查看该内容的权限；API=403"
+    },
+    {
+      "step": "S10 审计页可检索浏览器全流程留痕（建角色/授权/绑定/撤权）",
+      "ok": true
+    },
+    {
+      "step": "S11 375px 窄屏导航与页面可用（表格横滚适配）",
+      "ok": true
+    },
+    {
+      "step": "全程无页面 JS 异常（Runtime.exceptionThrown=0）",
+      "ok": true
+    }
+  ],
+  "pageErrors": []
+}
