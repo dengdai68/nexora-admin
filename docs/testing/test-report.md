@@ -13,7 +13,7 @@
 | 被测代码 SHA（tested） | `0e7915bcb0de1581751219651793079a1d49ee77`（feat/nexora-rbac-011-rbac，研发交付版本） |
 | 远程核对 | `git ls-remote origin feat/nexora-rbac-011-rbac` = `0e7915bcb0de1581751219651793079a1d49ee77`（一致）；`origin/main` = `66f5854b54b60eebb1b3f840ac24ca0b6aa9e5cd`（未被直推） |
 | 工作区状态 | 测试开始时 `git status --porcelain` 为空（干净）；HEAD 与远程分支一致 |
-| 测试节点新增提交 | `420fc4043467141cfbb7c9ba2ed381f1eaf396e8`（本提交）——仅含测试资产与文档（tests/e2e/independent-verify.test.mjs、tests/browser/*、docs/testing/*、tests/README.md 增补），不修改任何产品代码；产品代码与研发交付 `0e7915b` 逐字节一致 |
+| 测试节点新增提交 | 测试资产与文档随需求分支交付（`420fc40` 起，定稿以 `git ls-remote origin feat/nexora-rbac-011-rbac` 实测为准）——仅含测试资产与文档（tests/e2e/independent-verify.test.mjs、tests/browser/*、docs/testing/*、tests/README.md 增补），不修改任何产品代码；被测产品代码 SHA 恒为 `0e7915bcb0de1581751219651793079a1d49ee77` |
 | 执行环境 | macOS Darwin 25.4.0（arm64）、Node v24.7.0（≥22.5）、npm 11.5.1、Google Chrome 152.0.7977.83（headless=new，完整 Blink/V8，CDP 驱动）、零 npm 外部依赖 |
 | 数据隔离 | 全部自动化用例使用 server-harness 隔离临时 SQLite + 虚构用户；未读取/复用旧任务任何产物；未触碰 4322 端口与任何现行服务数据 |
 
