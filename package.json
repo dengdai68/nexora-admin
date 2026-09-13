@@ -1,0 +1,16 @@
+{
+  "name": "nexora-admin",
+  "version": "0.1.0",
+  "private": true,
+  "description": "云枢后台登录注册与会话应用（零外部依赖，Node.js 内置 HTTP + node:sqlite + 原生前端）",
+  "type": "module",
+  "engines": {
+    "node": ">=22.5"
+  },
+  "scripts": {
+    "start": "node server/index.mjs",
+    "test": "node --test \"tests/unit/*.test.mjs\"",
+    "test:e2e": "node --test \"tests/e2e/*.test.mjs\"",
+    "seed": "node server/seed.mjs"
+  }
+}

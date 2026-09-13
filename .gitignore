@@ -1,0 +1,7 @@
+# 运行期生成物：数据库、日志、依赖、版本戳一律不入库
+data/
+logs/
+node_modules/
+VERSION
+*.log
+.DS_Store
