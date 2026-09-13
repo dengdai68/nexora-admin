@@ -8,7 +8,7 @@ import { errorBody } from './http-server.mjs';
 import { SESSION_COOKIE } from './routes.mjs';
 import { resolveEffectivePermissions, isSuperAdmin } from './authz.mjs';
 import { catalogKeySet } from './permissions.mjs';
-import { countRoles, listPermissions } from './db.mjs';
+import { countRoles, findRoleById, listPermissions } from './db.mjs';
 import { AUDIT_ACTIONS } from './audit-service.mjs';
 import {
   parseAuditQuery,
@@ -123,6 +123,26 @@ export function buildAdminRoutes({ db, authService, adminService, auditService }
 
   const NOT_FOUND_ROLE = { status: 404, body: errorBody('not_found', '角色不存在') };
 
+  /**
+   * 内置角色保护前置（DEF-01 / AC-12 / P-01）：
+   * 路径寻址不依赖请求体，保护判定先于载荷校验——目标为内置角色时无论载荷如何，
+   * 一律 403 role_protected 并按 AD-11 写 denied 审计；目标不存在 → 404；非内置 → null（放行后续校验）。
+   * admin-service 事务内的同款判定保留为权威兜底（防御纵深）。
+   */
+  function preCheckProtectedRole(ctx, meta, roleId, message) {
+    const role = findRoleById(db, roleId);
+    if (!role) return NOT_FOUND_ROLE;
+    if (!role.isBuiltin) return null;
+    auditService.record({
+      actor: { id: ctx.actor.id, username: ctx.actor.username },
+      action: meta.auditAction,
+      target: { type: 'role', id: String(roleId), label: role.name },
+      result: 'denied',
+      reason: 'role_protected',
+    });
+    return { status: 403, body: errorBody('role_protected', message) };
+  }
+
   const handlers = {
     listUsers: (ctx) => {
       const parsed = parseListQuery(queryOf(ctx));
@@ -173,6 +193,9 @@ export function buildAdminRoutes({ db, authService, adminService, auditService }
     updateRole: (ctx) => {
       const id = parseRoleId(ctx);
       if (id === null) return NOT_FOUND_ROLE;
+      const meta = bySignatureMeta.get('PUT /api/admin/roles/:id');
+      const protectedDeny = preCheckProtectedRole(ctx, meta, id, '内置超级管理员角色受保护，不可编辑');
+      if (protectedDeny) return protectedDeny;
       const checked = validateRolePayload(ctx.body);
       if (!checked.ok) return { status: 400, body: errorBody('invalid_params', '参数不合法', checked.fields) };
       return respond(adminService.updateRoleInfo(ctx.actor, id, checked.value));
@@ -180,6 +203,9 @@ export function buildAdminRoutes({ db, authService, adminService, auditService }
     setRoleStatus: (ctx) => {
       const id = parseRoleId(ctx);
       if (id === null) return NOT_FOUND_ROLE;
+      const meta = bySignatureMeta.get('POST /api/admin/roles/:id/status');
+      const protectedDeny = preCheckProtectedRole(ctx, meta, id, '内置超级管理员角色受保护，不可启停');
+      if (protectedDeny) return protectedDeny;
       const checked = validateStatusPayload(ctx.body);
       if (!checked.ok) return { status: 400, body: errorBody('invalid_params', '参数不合法', checked.fields) };
       return respond(adminService.setRoleStatus(ctx.actor, id, checked.value.status));
@@ -192,6 +218,9 @@ export function buildAdminRoutes({ db, authService, adminService, auditService }
     setRolePermissions: (ctx) => {
       const id = parseRoleId(ctx);
       if (id === null) return NOT_FOUND_ROLE;
+      const meta = bySignatureMeta.get('PUT /api/admin/roles/:id/permissions');
+      const protectedDeny = preCheckProtectedRole(ctx, meta, id, '内置超级管理员角色受保护，不可修改权限集');
+      if (protectedDeny) return protectedDeny;
       const checked = validatePermissionKeysPayload(ctx.body, { catalogKeys: catalogKeySet() });
       if (!checked.ok) return { status: 400, body: errorBody('invalid_params', '参数不合法', checked.fields) };
       return respond(adminService.setRolePermissions(ctx.actor, id, checked.value.permissionKeys));
@@ -258,6 +287,9 @@ export function buildAdminRoutes({ db, authService, adminService, auditService }
     ['GET /api/admin/permissions', handlers.listPermissions],
     ['GET /api/admin/audit-events', handlers.listAuditEvents],
   ]);
+
+  /** "METHOD path" → 路由元数据（前置保护判定取审计动作码用）。 */
+  const bySignatureMeta = new Map(ADMIN_ROUTES_META.map((meta) => [`${meta.method} ${meta.path}`, meta]));
 
   return ADMIN_ROUTES_META.map((meta) => ({
     method: meta.method,

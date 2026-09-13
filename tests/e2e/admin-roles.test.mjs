@@ -257,3 +257,72 @@ test('e2e(admin-roles): 管理写操作缺 CSRF 头 → 403 csrf_protection（AC
   const read = await admin.request('/api/admin/roles');
   assert.equal(read.status, 200);
 });
+
+test('e2e(admin-roles): DEF-01 回归——super_admin 保护判定先于载荷校验，任何载荷均 403 role_protected + 审计', async (t) => {
+  const server = await startTestServer();
+  t.after(() => server.close());
+  const admin = await registerBootstrapLogin(server, ADMIN.username, ADMIN.password);
+  const roles = await admin.request('/api/admin/roles?q=super_admin');
+  const superRole = roles.body.items[0];
+
+  // ① 保留 key 仅改名（DEF-01 原始复现路径）→ 403 role_protected（修复前为 400 invalid_params）
+  const renameOnly = await writeCall(admin, `/api/admin/roles/${superRole.id}`, {
+    method: 'PUT',
+    body: { name: '改名尝试', key: 'super_admin', description: '' },
+  });
+  assert.equal(renameOnly.status, 403, '保留 key 改名应 403 role_protected');
+  assert.equal(renameOnly.body.error.code, 'role_protected');
+
+  // ② 非法载荷也先命中保护（而非 400）：非法 key 格式 / 非法 status / 未知 permissionKeys
+  const badKey = await writeCall(admin, `/api/admin/roles/${superRole.id}`, {
+    method: 'PUT',
+    body: { name: 'x', key: '1BAD', description: '' },
+  });
+  assert.equal(badKey.status, 403);
+  assert.equal(badKey.body.error.code, 'role_protected');
+  const badStatus = await writeCall(admin, `/api/admin/roles/${superRole.id}/status`, {
+    body: { status: 'banned' },
+  });
+  assert.equal(badStatus.status, 403);
+  assert.equal(badStatus.body.error.code, 'role_protected');
+  const badKeys = await writeCall(admin, `/api/admin/roles/${superRole.id}/permissions`, {
+    method: 'PUT',
+    body: { permissionKeys: ['ghost:hack'] },
+  });
+  assert.equal(badKeys.status, 403);
+  assert.equal(badKeys.body.error.code, 'role_protected');
+
+  // ③ 全部 4 次拒绝均留审计（修复前保留 key 路径无审计）
+  const audit = await admin.request('/api/admin/audit-events?pageSize=50');
+  const onSuper = audit.body.items.filter(
+    (i) => i.targetId === String(superRole.id) && i.reason === 'role_protected' && i.result === 'denied',
+  );
+  assert.equal(onSuper.length, 4, '针对 super_admin 的 4 次写企图全部留痕');
+  assert.ok(onSuper.some((i) => i.action === 'role.update'));
+  assert.ok(onSuper.some((i) => i.action === 'role.status'));
+  assert.ok(onSuper.some((i) => i.action === 'role.assign_permissions'));
+  // ④ 保护有效：角色未被修改
+  const after = await admin.request(`/api/admin/roles/${superRole.id}`);
+  assert.equal(after.body.role.name, '超级管理员');
+  assert.equal(after.body.role.status, 'active');
+
+  // ⑤ 非内置角色行为不变：非法载荷仍 400、合法载荷正常
+  const created = await writeCall(admin, '/api/admin/roles', { body: { name: '普通角色', key: 'plain_role', description: '' } });
+  const invalid = await writeCall(admin, `/api/admin/roles/${created.body.role.id}`, {
+    method: 'PUT',
+    body: { name: '', key: 'plain_role', description: '' },
+  });
+  assert.equal(invalid.status, 400, '非内置角色非法载荷仍走 400 结构校验');
+  const valid = await writeCall(admin, `/api/admin/roles/${created.body.role.id}`, {
+    method: 'PUT',
+    body: { name: '普通角色改', key: 'plain_role', description: '' },
+  });
+  assert.equal(valid.status, 200, '非内置角色合法编辑不受影响');
+
+  // ⑥ 不存在角色：404 先于载荷校验（路径寻址不依赖请求体）
+  const missing = await writeCall(admin, '/api/admin/roles/99999', {
+    method: 'PUT',
+    body: { name: '', key: 'x', description: '' },
+  });
+  assert.equal(missing.status, 404);
+});

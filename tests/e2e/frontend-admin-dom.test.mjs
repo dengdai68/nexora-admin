@@ -398,6 +398,65 @@ test('admin-dom: 登录后按权限决定管理入口可见性（AC-01/02）', a
   assert.ok(!docB.getElementById('admin-nav').textContent.includes('角色管理'), '无权限入口不渲染');
 });
 
+test('admin-dom: DEF-02 回归——慢响应晚到不覆盖当前视图（generation 并发防护）', async () => {
+  const doc = createFakeDocument(ADMIN_IDS);
+  let releaseUsers;
+  const usersGate = new Promise((resolve) => {
+    releaseUsers = resolve;
+  });
+  const apiFetch = async (path) => {
+    if (path.startsWith('/api/admin/users')) {
+      await usersGate; // 用户列表慢响应（挂起直至放行）
+      return { networkError: false, status: 200, body: { items: [], total: 0, page: 1, pageSize: 20 } };
+    }
+    if (path.startsWith('/api/admin/audit-events')) {
+      return { networkError: false, status: 200, body: { items: [], total: 0, page: 1, pageSize: 20 } };
+    }
+    return { networkError: false, status: 404, body: {} };
+  };
+  const shell = initAdmin(doc, apiFetch, {});
+  shell.enter(['user:read', 'audit:read']); // 首视图 users 渲染被挂起
+  await flush(2);
+  shell.navigate('audit'); // 快速切换到审计页
+  await flush();
+  const content = doc.getElementById('admin-content');
+  assert.ok(content.textContent.includes('授权审计'), '审计页已渲染完成');
+  releaseUsers(); // 放行慢响应（旧视图数据晚到）
+  await flush();
+  assert.ok(content.textContent.includes('授权审计'), '慢响应晚到后内容仍为审计页');
+  assert.ok(!content.textContent.includes('用户管理'), '旧响应不得覆盖当前视图');
+  // 导航高亮与内容一致
+  const active = doc.getElementById('admin-nav').findAll((n) => n.className.includes('active'));
+  assert.equal(active.length, 1);
+  assert.ok(active[0].textContent.includes('授权审计'), '高亮停留在授权审计');
+
+  // 快速来回切换两次：最终渲染必须来自最后一次导航
+  let releaseUsers2;
+  const usersGate2 = new Promise((resolve) => {
+    releaseUsers2 = resolve;
+  });
+  const apiFetch2 = async (path) => {
+    if (path.startsWith('/api/admin/users')) {
+      await usersGate2;
+      return { networkError: false, status: 200, body: { items: [], total: 0, page: 1, pageSize: 20 } };
+    }
+    return { networkError: false, status: 200, body: { items: [], total: 0, page: 1, pageSize: 20 } };
+  };
+  const doc2 = createFakeDocument(ADMIN_IDS);
+  const shell2 = initAdmin(doc2, apiFetch2, {});
+  shell2.enter(['user:read', 'audit:read']);
+  await flush(2);
+  shell2.navigate('audit');
+  await flush(2);
+  shell2.navigate('users'); // 又回到用户管理（其请求被挂起）
+  await flush(2);
+  releaseUsers2();
+  await flush();
+  const content2 = doc2.getElementById('admin-content');
+  assert.ok(content2.textContent.includes('用户管理'), '最后一次导航为用户管理，内容须一致');
+  assert.ok(!content2.textContent.includes('授权审计'), '中间视图不得残留');
+});
+
 test('admin-dom: 静态防线——web/ 全部前端源码无 HTML 注入面 API（AD-10）', () => {
   for (const file of ['app.js', 'admin.js', 'admin-users.js', 'admin-roles.js', 'admin-catalog.js', 'admin-audit.js']) {
     const source = readFileSync(join(REPO_ROOT, 'web', file), 'utf8');

@@ -129,6 +129,8 @@ export function initAdmin(doc, apiFetch, hooks = {}) {
   let permissions = new Set();
   let currentView = null;
   let suppressHashSync = false;
+  /** 渲染世代号（DEF-02 并发防护）：每次 renderView 递增，仅最新世代允许写回内容容器。 */
+  let renderGeneration = 0;
 
   const ctx = {
     doc,
@@ -159,6 +161,9 @@ export function initAdmin(doc, apiFetch, hooks = {}) {
 
   /** 渲染指定视图；无权限直达 → 无权限态（AC-02）。 */
   async function renderView(viewId) {
+    // DEF-02 并发防护：先递增世代号；慢响应晚到时若世代已过期则丢弃其写回，
+    // 内容区始终与 currentView/hash 一致（旧视图内部交互写其自身暂存容器，不影响当前视图）。
+    const generation = ++renderGeneration;
     const view = ADMIN_VIEWS.find((v) => v.id === viewId);
     currentView = view ? viewId : null;
     renderNav();
@@ -166,7 +171,12 @@ export function initAdmin(doc, apiFetch, hooks = {}) {
       renderState(content, doc, 'forbidden');
       return;
     }
-    await view.render(content, ctx);
+    renderState(content, doc, 'loading');
+    const stage = el(doc, 'div', { className: 'admin-view-stage' });
+    await view.render(stage, ctx);
+    if (generation !== renderGeneration) return; // 已有更新的渲染接管，丢弃过期内容
+    content.textContent = '';
+    content.appendChild(stage);
   }
 
   /** 视图切换：同步 hash（可书签/刷新回显）并渲染。 */

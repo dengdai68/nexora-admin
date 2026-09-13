@@ -75,7 +75,7 @@ valid = 会话存在 AND revoked_at IS NULL AND now < expires_at
 - **并集模型**：用户有效权限 = 其所有**已启用**角色的权限并集，每请求单条联表 SQL 实时解析（无缓存）；角色启停/授权变更下一请求即生效。
 - **默认拒绝**：目录外 key 永不进入并集（外键 + 目录只读）；新注册用户无任何角色与后台权限。
 - **权限目录**：`server/permissions.mjs` 的 `PERMISSION_CATALOG` 为唯一权威（10 项，`<module>:<action>` 稳定命名）；v003 迁移首次种子，启动时 `syncPermissionCatalog` 幂等同步元数据并保证 super_admin 全覆盖；无任何目录写接口。
-- **内置 super_admin**：v003 种子角色，持有目录全量权限；本体受保护（任何操作者普通编辑/启停/删除/改权限 → 403 role_protected）；其绑定仅 super_admin 可管理。
+- **内置 super_admin**：v003 种子角色，持有目录全量权限；本体受保护（任何操作者普通编辑/启停/删除/改权限 → 403 role_protected）；其绑定仅 super_admin 可管理。保护判定先于载荷校验（路径寻址不依赖请求体）：目标为内置角色时无论载荷如何一律 403 并按 AD-11 写 denied 审计（DEF-01 修复口径），admin-service 事务内的同款判定为权威兜底。
 - **防提权（服务端强制）**：
   - P-02 分配/撤销 super_admin 绑定仅 super_admin；
   - P-03/P-04 普通授权者新增授权（角色权限 key / 用户角色绑定）必须是其自身有效权限子集，否则 403 grant_out_of_scope；
