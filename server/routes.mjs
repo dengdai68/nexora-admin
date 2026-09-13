@@ -2,11 +2,13 @@
  * API 路由（架构 §3 契约，字段名/状态码/错误格式不得偏离）：
  * register 201/400/409（不建会话、不下发 Cookie）；login 200+Set-Cookie / 400 / 401 通用；
  * logout 一律 200 + Max-Age=0 清 Cookie；me/resource 走 requireSession；health 返回 version。
+ * NEXORA-RBAC-011 新增 GET /api/me/permissions（AD-09：仅需会话，返回调用者有效权限；/api/me 响应体冻结不变）。
  */
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { errorBody } from './http-server.mjs';
 import { validateCredentials } from './validation.mjs';
+import { resolveEffectivePermissions } from './authz.mjs';
 
 export const SESSION_COOKIE = 'nexora_session';
 const COOKIE_MAX_AGE_SECONDS = 86_400; // 与服务端 24h 绝对过期对齐（AD-05）
@@ -41,10 +43,10 @@ export async function resolveVersion(config, repoRoot) {
 }
 
 /**
- * 构建五个 API 端点路由表。
- * @param {{authService: object, config: object, repoRoot: string}} deps
+ * 构建 API 端点路由表（既有五端点 + GET /api/me/permissions）。
+ * @param {{authService: object, config: object, repoRoot: string, db: object}} deps
  */
-export function buildRoutes({ authService, config, repoRoot }) {
+export function buildRoutes({ authService, config, repoRoot, db }) {
   /** 受保护守卫：解析 Cookie → 领域判定 → 失败统一 401（架构 §4）。 */
   function requireSession(ctx) {
     const session = authService.resolveSession(ctx.cookies[SESSION_COOKIE]);
@@ -122,6 +124,17 @@ export function buildRoutes({ authService, config, repoRoot }) {
           status: 200,
           body: { resource: { title: '云枢后台示例资源', owner: ctx.session.user.username } },
         };
+      },
+    },
+    {
+      method: 'GET',
+      path: '/api/me/permissions',
+      handler: (ctx) => {
+        const denied = requireSession(ctx);
+        if (denied) return denied;
+        // AD-09：返回调用者有效权限（排序、去重；普通用户为空数组），不改 /api/me 契约
+        const permissions = [...resolveEffectivePermissions(db, ctx.session.user.id)].sort();
+        return { status: 200, body: { permissions } };
       },
     },
     {

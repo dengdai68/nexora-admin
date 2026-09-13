@@ -30,13 +30,14 @@ class StubElement {
 
 function buildDom() {
   const ids = [
-    'view-login', 'view-register', 'view-welcome',
+    'view-login', 'view-register', 'view-welcome', 'view-admin',
     'login-form', 'register-form',
     'login-username', 'login-password', 'login-error', 'login-notice',
     'register-username', 'register-password', 'register-error',
     'register-username-hint', 'register-password-hint',
     'welcome-username', 'welcome-expires', 'logout-button',
     'goto-register', 'goto-login',
+    'goto-admin', 'admin-nav', 'admin-content', 'admin-back', 'admin-logout',
   ];
   const elements = new Map(ids.map((id) => [id, new StubElement(id)]));
   elements.get('login-password').type = 'password';

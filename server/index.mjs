@@ -1,6 +1,7 @@
 /**
  * 服务入口（DEV-01/AD-09）：装配 config/clock/db/service/http，启动与优雅退出。
  * 过期清理三条路径之生产路径：启动时执行一次 + 每小时定时扫描（unref，不阻止进程退出）。
+ * NEXORA-RBAC-011：迁移后调用 syncPermissionCatalog（AD-06），装配审计/管理领域服务与管理路由。
  */
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -11,10 +12,23 @@ import { openMigratedDatabase } from './migrations.mjs';
 import { createAuthService } from './auth-service.mjs';
 import { buildRoutes } from './routes.mjs';
 import { createHttpServer } from './http-server.mjs';
+import { syncPermissionCatalog } from './permissions.mjs';
+import { createAuditService } from './audit-service.mjs';
+import { createAdminService } from './admin-service.mjs';
+import { buildAdminRoutes } from './admin-routes.mjs';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const WEB_DIR = join(REPO_ROOT, 'web');
-const STATIC_FILES = { '/': 'index.html', '/styles.css': 'styles.css', '/app.js': 'app.js' };
+const STATIC_FILES = {
+  '/': 'index.html',
+  '/styles.css': 'styles.css',
+  '/app.js': 'app.js',
+  '/admin.js': 'admin.js',
+  '/admin-users.js': 'admin-users.js',
+  '/admin-roles.js': 'admin-roles.js',
+  '/admin-catalog.js': 'admin-catalog.js',
+  '/admin-audit.js': 'admin-audit.js',
+};
 const CLEANUP_INTERVAL_MS = 60 * 60 * 1000; // 每小时
 
 /**
@@ -26,10 +40,21 @@ export function createApp(overrides = {}) {
   const clock = overrides.clock ?? systemClock();
   const logger = overrides.logger ?? createLogger();
   const db = openMigratedDatabase(config.dbPath);
+  const syncDiff = syncPermissionCatalog(db);
+  if (syncDiff.addedKeys.length > 0 || syncDiff.grantedToSuperAdmin.length > 0) {
+    logger.info(
+      `permission catalog synced added_keys=${syncDiff.addedKeys.length} granted_to_super_admin=${syncDiff.grantedToSuperAdmin.length}`,
+    );
+  }
   const authService = createAuthService({ db, clock, sessionTtlMs: config.sessionTtlMs });
-  const routes = buildRoutes({ authService, config, repoRoot: REPO_ROOT });
+  const auditService = createAuditService({ db, clock });
+  const adminService = createAdminService({ db, clock, auditService });
+  const routes = [
+    ...buildRoutes({ authService, config, repoRoot: REPO_ROOT, db }),
+    ...buildAdminRoutes({ db, authService, adminService, auditService }),
+  ];
   const server = createHttpServer({ routes, staticDir: WEB_DIR, staticFiles: STATIC_FILES, logger });
-  return { config, clock, logger, db, authService, server };
+  return { config, clock, logger, db, authService, auditService, adminService, server };
 }
 
 /**

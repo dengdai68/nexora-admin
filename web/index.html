@@ -61,7 +61,25 @@
       <p class="welcome-line">当前用户：<strong id="welcome-username"></strong></p>
       <p class="subtitle">这里是受保护的欢迎区域，仅登录后可见。</p>
       <p class="hint" id="welcome-expires" hidden></p>
+      <button type="button" class="primary" id="goto-admin" hidden>进入后台管理</button>
       <button type="button" class="primary" id="logout-button">退出登录</button>
+    </section>
+
+    <!-- 后台管理视图（受保护，按权限渲染入口，NEXORA-RBAC-011） -->
+    <section id="view-admin" aria-labelledby="admin-title" hidden>
+      <div class="admin-shell">
+        <header class="admin-header">
+          <h1 id="admin-title" class="brand">云枢后台管理</h1>
+          <span class="admin-header-actions">
+            <button type="button" class="link" id="admin-back">返回欢迎页</button>
+            <button type="button" class="link" id="admin-logout">退出登录</button>
+          </span>
+        </header>
+        <div class="admin-body">
+          <nav class="admin-nav" id="admin-nav" aria-label="后台管理导航"></nav>
+          <div class="admin-content" id="admin-content"></div>
+        </div>
+      </div>
     </section>
   </main>
   <script type="module" src="/app.js"></script>
