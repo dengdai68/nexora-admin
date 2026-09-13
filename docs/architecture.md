@@ -1,18 +1,21 @@
 # 架构说明（仓库落盘版）
 
 > 与 `docs/api.md` 共同构成冻结契约。实现与本文件不一致时视为缺陷。
+> NEXORA-RBAC-011 起新增「RBAC 权限管理」章节；既有登录/会话契约不变。
 
 ## 1. 分层
 
 ```text
-web/（静态前端） → server/http-server.mjs + routes.mjs（HTTP 层）
-→ server/auth-service.mjs（领域服务） → server/{db,migrations}.mjs（数据访问，node:sqlite）
+web/（静态前端） → server/http-server.mjs + routes.mjs + admin-routes.mjs（HTTP 层）
+→ server/auth-service.mjs（认证领域） / admin-service.mjs（管理领域）
+→ server/{db,migrations}.mjs（数据访问，node:sqlite）
+authz.mjs（鉴权纯领域） → {db, permissions}.mjs；audit-service.mjs → db.mjs
 ```
 
 - `web/` 只通过 HTTP 与后端交互，不含领域规则。
-- `http-server.mjs` 只承载路由/解析/错误边界/静态资源，不含领域规则。
+- `http-server.mjs` 只承载路由（精确匹配优先 + `:param` 模式段）/解析/错误边界/静态资源，不含领域规则。
 - 领域服务不感知 HTTP；所有时间判定走注入时钟（`clock.mjs`）。
-- 依赖单向：`routes → auth-service → {passwords, tokens, db}`；禁止反向依赖。
+- 依赖单向：`routes → auth-service → {passwords, tokens, db}`；`admin-routes → {authz, admin-service, audit-service, permissions}`；`admin-service → {authz, audit-service, db}`；`migrations → {db, permissions}`；`bootstrap-admin → {migrations, db, audit-service}`。禁止反向依赖。
 - 零外部 npm 依赖；Node.js ≥ 22.5。
 
 ## 2. 数据模型
@@ -55,15 +58,43 @@ valid = 会话存在 AND revoked_at IS NULL AND now < expires_at
 
 ## 4. 权限
 
-两态模型（未认证 / 已认证）：
+认证两态模型（未认证 / 已认证）不变：
 
 | 资源 | 未认证 | 已认证 |
 | --- | --- | --- |
 | 静态资源、/api/register、/api/login、/api/health | 允许 | 允许 |
-| /api/me、/api/resource | 401 | 允许 |
+| /api/me、/api/resource、/api/me/permissions | 401 | 允许 |
 | /api/logout | 200（幂等，无副作用） | 200（撤销当前会话） |
+| /api/admin/* | 401 | 按 RBAC 逐端点鉴权（无权限 403） |
 
-`requireSession`（routes.mjs）统一执行「解析 Cookie → SHA-256 → 按 token_hash 查询 → 有效性判定（注入时钟）」；权限判定唯一权威在后端，前端视图切换只是呈现。
+`requireSession`（routes.mjs）统一执行「解析 Cookie → SHA-256 → 按 token_hash 查询 → 有效性判定（注入时钟 + 用户启用状态检查）」；权限判定唯一权威在后端，前端视图切换只是呈现。
+
+### 4.1 RBAC 模型（NEXORA-RBAC-011）
+
+- **实体**：User（+status）、Role（key/name/description/status/is_builtin）、Permission（目录）、UserRole、RolePermission、AuditEvent。
+- **并集模型**：用户有效权限 = 其所有**已启用**角色的权限并集，每请求单条联表 SQL 实时解析（无缓存）；角色启停/授权变更下一请求即生效。
+- **默认拒绝**：目录外 key 永不进入并集（外键 + 目录只读）；新注册用户无任何角色与后台权限。
+- **权限目录**：`server/permissions.mjs` 的 `PERMISSION_CATALOG` 为唯一权威（10 项，`<module>:<action>` 稳定命名）；v003 迁移首次种子，启动时 `syncPermissionCatalog` 幂等同步元数据并保证 super_admin 全覆盖；无任何目录写接口。
+- **内置 super_admin**：v003 种子角色，持有目录全量权限；本体受保护（任何操作者普通编辑/启停/删除/改权限 → 403 role_protected）；其绑定仅 super_admin 可管理。
+- **防提权（服务端强制）**：
+  - P-02 分配/撤销 super_admin 绑定仅 super_admin；
+  - P-03/P-04 普通授权者新增授权（角色权限 key / 用户角色绑定）必须是其自身有效权限子集，否则 403 grant_out_of_scope；
+  - P-05 super_admin 成员的启停仅 super_admin 可操作；
+  - P-06 最后一名启用 super_admin：禁用/撤权在同一 BEGIN IMMEDIATE 事务内做计数校验，并发下最多一单成功（409 last_super_admin）。
+- **用户禁用语义**：禁用即在事务内撤销其全部会话 + 请求级状态检查（resolveSession 双重防护）；重新启用不复活已撤销会话；禁用用户登录返回与密码错误逐字节一致的 401（防枚举）。
+- **CSRF**：`/api/admin/*` 写方法必须携带自定义头 `X-Nexora-CSRF: 1`（跨站简单请求无法携带自定义头，叠加 SameSite=Lax + 仅 JSON 415 形成纵深防御）；既有 register/login/logout 不加该校验以保持冻结契约。
+- **审计**：写操作 {用户启停、用户授权、角色新建/编辑/启停/删除、角色授权、引导授权} 的成功与被拒绝事件全量落 `audit_events`（操作者快照/对象/动作/前后差异/结果/原因/时间）；只读接口 403 仅进请求日志；detail 键白名单防御，永不记录凭据。
+- **管理 API 寻址**：用户以 username（唯一、不可改、URL 安全），角色以数值 id（key 可编辑）。
+
+### 4.2 数据模型新增（迁移 v002/v003，只追加）
+
+- v002：`users.status TEXT NOT NULL DEFAULT 'active'`（存量回填 active）+ `roles` / `permissions` / `role_permissions` / `user_roles` / `audit_events` 五表及索引；**全库不使用 ON DELETE CASCADE**（角色删除须先解除绑定，不静默级联）。
+- v003：按目录常量种子 permissions 10 行 + 内置 super_admin 角色并授予全量权限；**不创建任何 user_roles 绑定**（迁移不自动提升任何账号）。
+- 升级路径：备份 DB 文件 → 启动自动应用 v002/v003（幂等）→ 旧用户/会话行为不变；回退 = 恢复备份 + 回滚代码版本。
+
+### 4.3 首位管理员引导
+
+`npm run bootstrap:admin -- --username <已注册用户名>`（本机 CLI，AD-12）：仅对已存在账号授权；账号不存在明确失败（退出码 1）且不创建账号、不触碰密码；幂等（已绑定退出码 0 不重复写审计）；单事务 + INSERT OR IGNORE 收敛并发；审计动作 `admin.bootstrap`（actor `system:bootstrap`）。
 
 ## 5. 关键流程
 

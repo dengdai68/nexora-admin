@@ -17,24 +17,47 @@ function withTempDb(fn) {
   }
 }
 
-test('migrations: 全新库执行 v001 后表结构正确', () =>
+test('migrations: 全新库依次应用 v001–v003 后表结构正确（含 RBAC 六对象）', () =>
   withTempDb((dbPath) => {
     const db = openDatabase(dbPath);
     const applied = runMigrations(db);
-    assert.deepEqual(applied, [1]);
+    assert.deepEqual(applied, [1, 2, 3]);
     const tables = db
       .prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
       .all()
       .map((r) => r.name);
-    for (const name of ['users', 'sessions', 'schema_migrations']) {
+    for (const name of [
+      'users',
+      'sessions',
+      'schema_migrations',
+      'roles',
+      'permissions',
+      'role_permissions',
+      'user_roles',
+      'audit_events',
+    ]) {
       assert.ok(tables.includes(name), `缺少表 ${name}`);
     }
     const indexes = db
       .prepare("SELECT name FROM sqlite_master WHERE type='index' AND name LIKE 'idx_%' ORDER BY name")
       .all()
       .map((r) => r.name);
-    assert.ok(indexes.includes('idx_sessions_token_hash'));
-    assert.ok(indexes.includes('idx_sessions_expires_at'));
+    for (const name of [
+      'idx_sessions_token_hash',
+      'idx_sessions_expires_at',
+      'idx_sessions_user_id',
+      'idx_user_roles_role_id',
+      'idx_role_permissions_key',
+      'idx_audit_created',
+      'idx_audit_actor',
+      'idx_audit_action',
+      'idx_audit_target',
+    ]) {
+      assert.ok(indexes.includes(name), `缺少索引 ${name}`);
+    }
+    // users.status 列存在且默认 active
+    const columns = db.prepare("SELECT name FROM pragma_table_info('users')").all().map((r) => r.name);
+    assert.ok(columns.includes('status'), 'users 缺少 status 列');
     db.close();
   }));
 

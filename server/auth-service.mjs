@@ -42,6 +42,7 @@ export function createAuthService({ db, clock, sessionTtlMs }) {
   /**
    * 登录：格式已合法；凭据错误统一 INVALID_CREDENTIALS；
    * 用户不存在时对 dummy 哈希执行同等 scrypt 校验以对齐时延。
+   * 被禁用用户返回与密码错误逐字节一致的 401（AD-05 防枚举），不创建会话。
    * @returns {{ok:true, user:{username:string}, token:string, expiresAt:number} | INVALID_CREDENTIALS}
    */
   function login({ username, password }) {
@@ -49,6 +50,7 @@ export function createAuthService({ db, clock, sessionTtlMs }) {
     const storedHash = user ? user.passwordHash : getDummyHash();
     const verified = verifyPassword(password, storedHash);
     if (!user || !verified) return INVALID_CREDENTIALS;
+    if (user.status !== 'active') return INVALID_CREDENTIALS;
     const token = generateToken();
     const createdAt = clock.now();
     const expiresAt = createdAt + sessionTtlMs;
@@ -70,9 +72,10 @@ export function createAuthService({ db, clock, sessionTtlMs }) {
 
   /**
    * 解析会话（架构 §2 唯一权威判定）：
-   * 存在 AND revoked_at IS NULL AND now < expires_at，否则一律 null（不区分原因）。
+   * 存在 AND revoked_at IS NULL AND now < expires_at AND 用户启用（D-02 请求级状态检查），否则一律 null（不区分原因）。
+   * 内部返回扩展为 {user:{id, username}, expiresAt}（id 供鉴权层解析权限；对外 /api/me 响应体不变，AD-09）。
    * @param {string|undefined} token
-   * @returns {{user:{username:string}, expiresAt:number} | null}
+   * @returns {{user:{id:number, username:string}, expiresAt:number} | null}
    */
   function resolveSession(token) {
     if (typeof token !== 'string' || token.length === 0) return null;
@@ -82,7 +85,8 @@ export function createAuthService({ db, clock, sessionTtlMs }) {
     if (clock.now() >= session.expiresAt) return null;
     const user = findUserById(db, session.userId);
     if (!user) return null;
-    return { user: { username: user.username }, expiresAt: session.expiresAt };
+    if (user.status !== 'active') return null;
+    return { user: { id: user.id, username: user.username }, expiresAt: session.expiresAt };
   }
 
   /**

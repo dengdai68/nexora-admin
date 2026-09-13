@@ -1,6 +1,7 @@
 /**
- * 内置 HTTP 层（架构 §3 通用约定 / DEV-06）：
- * 路由表（方法+精确路径）、JSON 解析（仅 application/json，>16KB → 413，解析失败 → 400）、
+ * 内置 HTTP 层（架构 §3 通用约定 / DEV-06 / AD-04）：
+ * 路由表（方法+精确路径优先，`:param` 段模式匹配在后，ctx.params 填充字符串值）、
+ * JSON 解析（仅 application/json，>16KB → 413，解析失败 → 400）、
  * Cookie 解析与 Set-Cookie 工具、统一错误边界（500 通用体）、静态资源白名单防穿越、404/405。
  * 本层不含领域规则；日志只记录方法/路径/状态码/稳定错误码。
  */
@@ -76,13 +77,40 @@ async function readJsonBody(req) {
  *   logger: {request:Function, error:Function, info:Function},
  * }} options
  * routes handler 约定：返回 { status, body, headers? } 或 { error } 交由错误边界。
- * ctx = { req, body, cookies, params:{} }
+ * ctx = { req, method, body, cookies, params:{} }
+ * 路径含 `:param` 段的路由注册为模式路由；匹配顺序：精确表优先 → 模式表（注册顺序）；
+ * 模式段只捕获非空段（尾部斜杠不多匹配）。
  */
 export function createHttpServer({ routes, staticDir, staticFiles, logger }) {
-  const routeTable = new Map();
+  const exactTable = new Map();
+  const patternRoutes = [];
   for (const route of routes) {
-    const key = `${route.method} ${route.path}`;
-    routeTable.set(key, route.handler);
+    if (route.path.split('/').some((segment) => segment.startsWith(':'))) {
+      patternRoutes.push({
+        method: route.method,
+        path: route.path,
+        segments: route.path.split('/'),
+        handler: route.handler,
+      });
+    } else {
+      exactTable.set(`${route.method} ${route.path}`, route.handler);
+    }
+  }
+
+  /** 模式匹配：段数一致、字面段相等、`:param` 段捕获非空值。 */
+  function matchPattern(pattern, pathSegments) {
+    if (pattern.segments.length !== pathSegments.length) return null;
+    const params = {};
+    for (let i = 0; i < pattern.segments.length; i += 1) {
+      const segment = pattern.segments[i];
+      if (segment.startsWith(':')) {
+        if (pathSegments[i].length === 0) return null;
+        params[segment.slice(1)] = pathSegments[i];
+      } else if (segment !== pathSegments[i]) {
+        return null;
+      }
+    }
+    return params;
   }
 
   const server = createServer(async (req, res) => {
@@ -93,17 +121,38 @@ export function createHttpServer({ routes, staticDir, staticFiles, logger }) {
     try {
       // API 路由
       if (path.startsWith('/api/')) {
-        const handler = routeTable.get(`${method} ${path}`);
+        // 精确匹配优先（既有路由行为逐字节不变），再按注册顺序做模式匹配
+        let handler = exactTable.get(`${method} ${path}`);
+        let params = {};
         if (!handler) {
-          const samePathMethods = routes.filter((r) => r.path === path).map((r) => r.method);
-          if (samePathMethods.length > 0) {
+          const pathSegments = path.split('/');
+          for (const pattern of patternRoutes) {
+            if (pattern.method !== method) continue;
+            const captured = matchPattern(pattern, pathSegments);
+            if (captured) {
+              handler = pattern.handler;
+              params = captured;
+              break;
+            }
+          }
+        }
+        if (!handler) {
+          // 405：同路径（精确或模式命中）异方法 → 带 Allow；完全不命中 → 404
+          const allowed = new Set(
+            routes.filter((r) => r.path === path).map((r) => r.method),
+          );
+          const pathSegments = path.split('/');
+          for (const pattern of patternRoutes) {
+            if (matchPattern(pattern, pathSegments)) allowed.add(pattern.method);
+          }
+          if (allowed.size > 0) {
             return sendJson(res, 405, errorBody('method_not_allowed', '方法不允许'), logger, method, path, 'method_not_allowed', {
-              Allow: samePathMethods.join(', '),
+              Allow: [...allowed].join(', '),
             });
           }
           return sendJson(res, 404, errorBody('not_found', '接口不存在'), logger, method, path, 'not_found');
         }
-        const ctx = { req, cookies: parseCookies(req.headers.cookie), params: {} };
+        const ctx = { req, method, cookies: parseCookies(req.headers.cookie), params };
         if (method === 'POST' || method === 'PUT' || method === 'PATCH') {
           ctx.body = await readJsonBody(req);
         }

@@ -11,6 +11,7 @@
     "start": "node server/index.mjs",
     "test": "node --test \"tests/unit/*.test.mjs\"",
     "test:e2e": "node --test \"tests/e2e/*.test.mjs\"",
-    "seed": "node server/seed.mjs"
+    "seed": "node server/seed.mjs",
+    "bootstrap:admin": "node server/bootstrap-admin.mjs"
   }
 }
