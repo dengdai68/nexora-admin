@@ -95,7 +95,8 @@ async function main() {
     const activeNav = await ev(`document.querySelector('#admin-nav .admin-nav-item.active')?.dataset.view ?? '-'`);
     console.log(`放行后：page-title=${finalTitle}，hash=${finalHash}，导航高亮=${activeNav}`);
     const { result: shot } = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true }, sessionId);
-    writeFileSync(join(outDir, 'def-02-view-race.png'), Buffer.from(shot.data, 'base64'));
+    // 最新一次运行的截图独立命名，不覆盖测试节点留存的原始缺陷证据 def-02-view-race.png
+    writeFileSync(join(outDir, 'def-02-view-race-run.png'), Buffer.from(shot.data, 'base64'));
     const reproduced = finalTitle === '用户管理' && finalHash === '#/admin/audit';
     console.log(reproduced ? '✔ DEF-02 复现成立：内容被旧响应覆盖，与 hash/导航不一致' : '✖ 未复现');
     ws.close();

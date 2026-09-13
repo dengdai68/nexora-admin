@@ -2,8 +2,8 @@
 
 | 项 | 值 |
 | --- | --- |
-| 编号 | DEF-01（NEXORA-RBAC-011） |
-| 状态 | 开放 |
+| 编号 | DEF-01（NEXORA-RBAC-011）／系统缺陷 ID `defect_mu08kgcn_y2` |
+| 状态 | ✅ **已验证关闭**（regression 节点，2026-09-14） |
 | 严重度 | medium |
 | 发现人 | Nexora · 测试工程师（testing 节点） |
 | 发现日期 | 2026-09-14 |
@@ -58,3 +58,22 @@ role.update denied 审计条数 = 1   ← 仅路径 B 留痕，路径 A 无审�
 - 契约一致性：AC-12 对「普通编辑」路径不成立（状态码偏离冻结契约）。
 - 可审计性：针对最高权限角色的编辑企图可无审计留痕（探测不可见）。
 - 无直接越权/数据破坏：所有路径均被拒绝，角色状态不变。
+
+## 回归验证（regression 节点，tested SHA = `0e7918d71b0ba19a97d86150af26dc0a1dadfe29`）
+
+修复方案（bug_fix 提交 `0e7918d`）：admin-routes 新增 `preCheckProtectedRole` 前置判定（路径寻址不依赖请求体），updateRole/setRoleStatus/setRolePermissions 三端点对内置角色任何载荷一律 403 role_protected 并按 AD-11 写 denied 审计；admin-service 事务内判定保留为权威兜底（FIX-D1）。
+
+复现脚本原样重跑实测输出：
+
+```text
+super_admin role id = 1
+A 改名保留key → 403 {"error":{"code":"role_protected","message":"内置超级管理员角色受保护，不可编辑"}}
+B 改key合法载荷 → 403 {"error":{"code":"role_protected","message":"内置超级管理员角色受保护，不可编辑"}}
+role.update denied 审计条数 = 2 ["role_protected","role_protected"]
+尝试后 super_admin 名称 = 超级管理员 （未被修改）
+```
+
+- ✅ 路径 A/B 均 403 role_protected，与契约一致
+- ✅ 两次被拒绝尝试均写审计（denied/role_protected）
+- ✅ super_admin 本体未被修改
+- ✅ IND-06 转绿（独立验证 15/15）；研发新增 DEF-01 回归断言组（非法载荷亦 403、非内置 400/200 语义不变、404 先于载荷校验）随全量 e2e 78/78 通过（连续 3 次稳定）

@@ -1,9 +1,9 @@
 {
   "requirement": "NEXORA-RBAC-011",
   "browser": "Chrome/152.0.7977.83",
-  "commitSha": "0e7915bcb0de1581751219651793079a1d49ee77",
-  "serverBaseUrl": "http://127.0.0.1:56403",
-  "dbIsolated": "/var/folders/0v/30ygv3yd2fs9212mqrvq37t40000gn/T/nexora-e2e-PfpK2Q/e2e.db",
+  "commitSha": "0e7918d71b0ba19a97d86150af26dc0a1dadfe29",
+  "serverBaseUrl": "http://127.0.0.1:51636",
+  "dbIsolated": "/var/folders/0v/30ygv3yd2fs9212mqrvq37t40000gn/T/nexora-e2e-uIzSOm/e2e.db",
   "steps": [
     {
       "step": "准备：注册 web_admin/web_user + 真实 CLI 引导（退出码 0）",

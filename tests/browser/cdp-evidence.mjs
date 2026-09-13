@@ -366,8 +366,7 @@ async function main() {
     await cdp.waitFor(`!document.getElementById('view-welcome').hidden`, { label: 'admin 欢迎' });
     await cdp.eval(`document.getElementById('goto-admin').click()`);
     await cdp.waitFor(`document.querySelectorAll('#admin-nav .admin-nav-item').length === 4`, { label: 'admin 导航恢复' });
-    // 等待首个视图内容渲染完成再切换导航，避开视图切换竞态（该竞态已单独立缺陷 DEF-02 复现）
-    await cdp.waitFor(`document.querySelector('#admin-content .page-title')?.textContent === '用户管理' && document.querySelector('#admin-content .data-table') !== null`, { label: '用户管理内容就绪' });
+    // DEF-02 修复后：不等待首个视图就绪即快速切换导航，直接回归原竞态路径（慢响应晚到不得覆盖当前视图）
     await cdp.eval(`[...document.querySelectorAll('#admin-nav .admin-nav-item')].find((b) => b.dataset.view === 'audit').click()`);
     await cdp.waitFor(`document.querySelector('#admin-content .page-title')?.textContent === '授权审计'`, { label: '授权审计页' });
     // createElement 构建的表格无 tbody（浏览器仅对解析期 HTML 自动补 tbody），数据行 = tr 总数 - 表头

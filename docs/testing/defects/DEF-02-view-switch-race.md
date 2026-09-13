@@ -2,8 +2,8 @@
 
 | 项 | 值 |
 | --- | --- |
-| 编号 | DEF-02（NEXORA-RBAC-011） |
-| 状态 | 开放 |
+| 编号 | DEF-02（NEXORA-RBAC-011）／系统缺陷 ID `defect_mu08kgcn_y3` |
+| 状态 | ✅ **已验证关闭**（regression 节点，2026-09-14） |
 | 严重度 | medium |
 | 发现人 | Nexora · 测试工程师（testing 节点） |
 | 发现日期 | 2026-09-14 |
@@ -45,3 +45,20 @@ node tests/browser/def-02-view-race-repro.mjs
 
 - 用户快速切换导航时可能看到与导航/hash 不符的陈旧内容；在该状态下执行操作（如启停、授权）针对的是用户以为的另一个页面，存在误操作风险。
 - 不涉及越权（服务端逐 API 守卫仍是权威），属前端状态一致性缺陷。
+
+## 回归验证（regression 节点，tested SHA = `0e7918d71b0ba19a97d86150af26dc0a1dadfe29`）
+
+修复方案（bug_fix 提交 `0e7918d`）：`renderView` 引入递增 generation + 分离暂存容器（stage），仅最新世代允许写回内容区；过期渲染整体丢弃。
+
+确定性复现脚本原样重跑（连续 3 次）：
+
+```text
+审计页已渲染，hash = #/admin/audit
+放行后：page-title=授权审计，hash=#/admin/audit，导航高亮=audit
+✖ 未复现   ← 连续 3 次一致（第 1/2/3 次输出相同）
+```
+
+- ✅ 慢响应晚到被丢弃，内容与 hash/导航高亮保持一致
+- ✅ 修复版一致状态截图：`docs/testing/evidence/def-02-view-race-fixed.png`（bug_fix 留存）与 `def-02-view-race-run.png`（本次回归运行留存）；原始缺陷截图 `def-02-view-race.png` 保持未动
+- ✅ 浏览器全流程证据脚本已移除规避等待，直接走原竞态路径（进入后台立即快切审计页），连续 3 次 14/14 步通过，无抖动
+- ✅ DOM 替身门控双场景回归随全量 e2e 78/78 通过
